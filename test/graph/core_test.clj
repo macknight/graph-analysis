@@ -23,8 +23,9 @@
            :2 [[:4 2]]
            :3 [[:4 1]]
            :4 []}]
-    (is (= 4 (eccentricity g :1))) ;; 这里改成4
-    (is (= 0 (eccentricity g :4)))))
+    (is (= 4 (eccentricity g :1))) ;; 从 :1 到最远节点 :4 距离4
+    (is (= Double/POSITIVE_INFINITY (eccentricity g :4))) ;; :4 无出边且不可达其他节点，ecc=∞
+    ))
 
 (deftest test-radius-and-diameter
   (let [g {:1 [[:2 1]]
@@ -32,12 +33,19 @@
            :3 [[:4 3]]
            :4 []}]
     (is (= 5 (eccentricity g :2))) ;; 2->3->4 距离5
-    (is (= 6 (diameter g)))          ;; 最大eccentricity
-    (is (= 0 (radius g)))))          ;; 最小eccentricity（孤立节点4）
+    (is (= 6 (diameter g)))         ;; 最大eccentricity
+    (is (= 3 (radius g)))))         ;; 最小eccentricity，即 :3 的离心率
+
 
 (deftest test-isolated-node
   (let [g {:1 []
            :2 []
            :3 []}]
-    (is (= 0 (radius g)))
-    (is (= 0 (diameter g)))))
+    ;; 所有节点都孤立，离心率应该是∞
+    (is (= Double/POSITIVE_INFINITY (eccentricity g :1)))
+    (is (= Double/POSITIVE_INFINITY (eccentricity g :2)))
+    (is (= Double/POSITIVE_INFINITY (eccentricity g :3)))
+    (is (= Double/POSITIVE_INFINITY (radius g)))
+    (is (= Double/POSITIVE_INFINITY (diameter g)))
+    ))
+

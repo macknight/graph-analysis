@@ -1,28 +1,39 @@
 (ns graph.core
   (:require [clojure.data.priority-map :refer [priority-map]]))
 
-(defn make-graph [n s]
-  ;; 保证连通性的生成图：先构造生成树，再加随机边
-  (let [nodes (mapv #(keyword (str %)) (range 1 (inc n)))
-        edges (loop [edges #{},
-                     remaining (vec (rest nodes))]
-                (if (empty? remaining)
-                  edges
-                  (let [from (rand-nth (vec nodes))
-                        to (first remaining)]
-                    (recur (conj edges [from to]) (rest remaining)))))
-        all-edges (for [a nodes, b nodes :when (not= a b)] [a b])
-        remaining-edges (filter #(not (contains? edges %)) all-edges)
-        extra-edges (take (- s (count edges)) (shuffle remaining-edges))
-        final-edges (vec (concat edges extra-edges))
-        weights (repeatedly (count final-edges) #(inc (rand-int 10)))
-        edge-map (reduce (fn [m [[from to] w]]
-                           (update m from #(conj (or % []) [to w])))
-                         {} (map vector final-edges weights))]
-    ;; 确保每个节点都有entry，即使没有出边
-    (reduce (fn [m node] (update m node #(or % []))) edge-map nodes)))
+(defn make-graph
+  "生成一个有向加权图，节点数为 n，边数约为 s。
+   保证连通性：先生成生成树，再添加额外边。
+   返回格式：{node [[neighbor weight] ...] ...}"
+  [n s]
+  (let [nodes (mapv #(keyword (str %)) (range 1 (inc n)))]
+    ;; 先生成连通树，确保所有节点被连接
+    (loop [edges #{}
+           connected [(first nodes)]
+           remaining (vec (rest nodes))]
+      (if (empty? remaining)
+        ;; 生成树完成后，补充剩余边
+        (let [all-edges (for [a nodes, b nodes :when (not= a b)] [a b])
+              existing-edges edges
+              possible-edges (remove existing-edges all-edges)
+              extra-count (- s (count edges))
+              extra-edges (take extra-count (shuffle possible-edges))
+              final-edges (vec (concat edges extra-edges))
+              weights (repeatedly (count final-edges) #(inc (rand-int 10)))
+              edge-map (reduce (fn [m [[from to] w]]
+                                 (update m from #(conj (or % []) [to w])))
+                               {} (map vector final-edges weights))]
+          ;; 确保所有节点都有 entry，即使无出边也返回空列表
+          (reduce (fn [m node] (update m node #(or % []))) edge-map nodes))
+        ;; 继续扩展生成树
+        (let [from (rand-nth connected)
+              to (first remaining)
+              new-edges (conj edges [from to])]
+          (recur new-edges (conj connected to) (subvec remaining 1)))))))
 
-(defn dijkstra [graph start]
+(defn dijkstra
+  "Dijkstra算法，计算从start节点到所有其他节点的最短距离"
+  [graph start]
   (let [nodes (set (concat (keys graph) (map first (mapcat identity (vals graph)))))
         dist (into {} (map #(vector % Double/POSITIVE_INFINITY) nodes))
         dist (assoc dist start 0)
@@ -45,30 +56,41 @@
                         neighbors)]
             (recur dist' prev' queue')))))))
 
-(defn shortest-path [graph start end]
+
+(defn shortest-path
+  "计算从start到end的最短路径节点序列，若无路径返回nil"
+  [graph start end]
   (let [[dist prev] (dijkstra graph start)]
     (loop [v end, path []]
-      (if (nil? v)
-        nil
-        (if (= v start)
-          (reverse (conj path v))
-          (recur (get prev v) (conj path v)))))))
+      (cond
+        (nil? v) nil
+        (= v start) (reverse (conj path v))
+        :else (recur (get prev v) (conj path v))))))
+
 
 (defn eccentricity [graph node]
+  "节点node的离心率：从node出发能到达的最远距离"
   (let [[dist _] (dijkstra graph node)
-        reachable-dists (filter #(not= Double/POSITIVE_INFINITY %) (vals dist))]
+        other-dists (remove #(= 0 %) (vals dist))
+        reachable-dists (filter #(not= Double/POSITIVE_INFINITY %) other-dists)]
     (if (seq reachable-dists)
       (apply max reachable-dists)
       Double/POSITIVE_INFINITY)))
 
-(defn radius [graph]
+
+(defn radius
+  "图的半径：所有节点离心率的最小值（忽略不可达节点）"
+  [graph]
   (let [eccs (map #(eccentricity graph %) (keys graph))
         finite-eccs (filter #(not= Double/POSITIVE_INFINITY %) eccs)]
     (if (seq finite-eccs)
       (apply min finite-eccs)
       Double/POSITIVE_INFINITY)))
 
-(defn diameter [graph]
+
+(defn diameter
+  "图的直径：所有节点离心率的最大值（忽略不可达节点）"
+  [graph]
   (let [eccs (map #(eccentricity graph %) (keys graph))
         finite-eccs (filter #(not= Double/POSITIVE_INFINITY %) eccs)]
     (if (seq finite-eccs)
