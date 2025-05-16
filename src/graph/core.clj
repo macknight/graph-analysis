@@ -4,15 +4,12 @@
 (defn make-graph
   "生成一个有向加权图，节点数为 n，边数约为 s。
    保证连通性：先生成生成树，再添加额外边。
-   返回格式：{node [[neighbor weight] ...] ...}
-   若 s < n-1，则自动调整为 n-1。"
+   返回格式：{node [[neighbor weight] ...] ...}"
   [n s]
-  (let [min-edges (dec n)
-        s (if (< s min-edges)
-            (do (println (format "Warning: 边数 s=%d 小于 n-1=%d，自动调整为 %d" s min-edges min-edges))
-                min-edges)
-            s)
-        nodes (mapv #(keyword (str %)) (range 1 (inc n)))]
+  {:pre [(> n 0) (>= s 0)]}
+  (when (< s (dec n))
+    (throw (ex-info "边数 s 不足以保证图连通，至少为 n-1" {:n n :s s})))
+  (let [nodes (mapv #(keyword (str %)) (range 1 (inc n)))]
     ;; 先生成连通树，确保所有节点被连接
     (loop [edges #{}
            connected [(first nodes)]
@@ -39,14 +36,15 @@
 
 (defn dijkstra
   "Dijkstra算法，计算从start节点到所有其他节点的最短距离
-   不支持负权边，若检测到抛异常。"
+   时间复杂度: O(|E| + |V|log|V|)
+   空间复杂度: O(|V|)
+   注意: 不支持负权边，遇负权抛异常"
   [graph start]
-  ;; 先检测负权边
-  (doseq [[node neighbors] graph
-          [neighbor w] neighbors]
-    (when (neg? w)
-      (throw (ex-info (str "Dijkstra 不支持负权边: 边 " node "->" neighbor " 权重 " w) {:from node :to neighbor :weight w}))))
-
+  ;; 先检查负权边
+  (when (some (fn [[_ neighbors]]
+                (some (fn [[_ w]] (< w 0)) neighbors))
+              graph)
+    (throw (ex-info "Dijkstra算法不支持负权边" {})))
   (let [nodes (set (concat (keys graph) (map first (mapcat identity (vals graph)))))
         dist (into {} (map #(vector % Double/POSITIVE_INFINITY) nodes))
         dist (assoc dist start 0)
@@ -71,7 +69,12 @@
 
 
 (defn shortest-path
-  "计算从start到end的最短路径节点序列，若无路径返回nil"
+  "返回从 start 到 end 的最短路径节点序列（包含两端节点）。
+   示例: (shortest-path g :1 :3) => [:1 :2 :3]
+   注意:
+   - 当 start == end 时返回单元素列表
+   - 无路径时返回 nil
+   - 路径按从 start 到 end 的顺序排列"
   [graph start end]
   (let [[dist prev] (dijkstra graph start)]
     (loop [v end, path []]
@@ -80,33 +83,31 @@
         (= v start) (reverse (conj path v))
         :else (recur (get prev v) (conj path v))))))
 
-
 (defn eccentricity
-  "节点node的离心率：从node出发能到达的最远距离"
+  "节点node的离心率：从node出发能到达的最远距离
+   孤立节点或无出边时，返回0"
   [graph node]
   (let [[dist _] (dijkstra graph node)
         other-dists (remove #(= 0 %) (vals dist))
         reachable-dists (filter #(not= Double/POSITIVE_INFINITY %) other-dists)]
     (if (seq reachable-dists)
       (apply max reachable-dists)
-      Double/POSITIVE_INFINITY)))
-
+      0)))
 
 (defn radius
-  "图的半径：所有节点离心率的最小值（忽略不可达节点）"
+  "图的半径：所有节点离心率的最小值（忽略不可达节点和孤立节点0）"
   [graph]
   (let [eccs (map #(eccentricity graph %) (keys graph))
-        finite-eccs (filter #(not= Double/POSITIVE_INFINITY %) eccs)]
-    (if (seq finite-eccs)
-      (apply min finite-eccs)
-      Double/POSITIVE_INFINITY)))
-
+        valid-eccs (filter #(and (> % 0) (not= % Double/POSITIVE_INFINITY)) eccs)]
+    (if (seq valid-eccs)
+      (apply min valid-eccs)
+      0)))
 
 (defn diameter
-  "图的直径：所有节点离心率的最大值（忽略不可达节点）"
+  "图的直径：所有节点离心率的最大值（忽略不可达节点和孤立节点0）"
   [graph]
   (let [eccs (map #(eccentricity graph %) (keys graph))
-        finite-eccs (filter #(not= Double/POSITIVE_INFINITY %) eccs)]
-    (if (seq finite-eccs)
-      (apply max finite-eccs)
-      Double/POSITIVE_INFINITY)))
+        valid-eccs (filter #(and (> % 0) (not= % Double/POSITIVE_INFINITY)) eccs)]
+    (if (seq valid-eccs)
+      (apply max valid-eccs)
+      0)))
