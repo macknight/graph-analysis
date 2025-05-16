@@ -3,9 +3,15 @@
             [graph.core :refer :all]))
 
 (deftest test-make-graph
-  (let [g (make-graph 5 6)]
-    (is (= 5 (count (keys g))))
-    (is (every? vector? (mapcat identity (vals g))))))
+  (testing "生成图节点数和边结构"
+    (let [g (make-graph 5 6)]
+      (is (= 5 (count (keys g))))
+      (is (every? vector? (mapcat identity (vals g))))))
+
+  (testing "边数少于最小边数时自动调整"
+    (with-out-str ;; 屏蔽打印输出
+      (let [g (make-graph 5 3)] ;; 3 < 5-1=4 应自动调整为4边
+        (is (= 5 (count (keys g))))))))
 
 (deftest test-shortest-path
   (let [g {:1 [[:2 1] [:3 4]]
@@ -36,7 +42,6 @@
     (is (= 6 (diameter g)))         ;; 最大eccentricity
     (is (= 3 (radius g)))))         ;; 最小eccentricity，即 :3 的离心率
 
-
 (deftest test-isolated-node
   (let [g {:1 []
            :2 []
@@ -49,3 +54,8 @@
     (is (= Double/POSITIVE_INFINITY (diameter g)))
     ))
 
+(deftest test-dijkstra-negative-weight
+  (testing "负权边应抛异常"
+    (let [g {:1 [[:2 -1]] :2 []}]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"不支持负权边"
+                            (dijkstra g :1))))))

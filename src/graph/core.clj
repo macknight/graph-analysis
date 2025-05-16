@@ -4,9 +4,15 @@
 (defn make-graph
   "生成一个有向加权图，节点数为 n，边数约为 s。
    保证连通性：先生成生成树，再添加额外边。
-   返回格式：{node [[neighbor weight] ...] ...}"
+   返回格式：{node [[neighbor weight] ...] ...}
+   若 s < n-1，则自动调整为 n-1。"
   [n s]
-  (let [nodes (mapv #(keyword (str %)) (range 1 (inc n)))]
+  (let [min-edges (dec n)
+        s (if (< s min-edges)
+            (do (println (format "Warning: 边数 s=%d 小于 n-1=%d，自动调整为 %d" s min-edges min-edges))
+                min-edges)
+            s)
+        nodes (mapv #(keyword (str %)) (range 1 (inc n)))]
     ;; 先生成连通树，确保所有节点被连接
     (loop [edges #{}
            connected [(first nodes)]
@@ -32,8 +38,15 @@
           (recur new-edges (conj connected to) (subvec remaining 1)))))))
 
 (defn dijkstra
-  "Dijkstra算法，计算从start节点到所有其他节点的最短距离"
+  "Dijkstra算法，计算从start节点到所有其他节点的最短距离
+   不支持负权边，若检测到抛异常。"
   [graph start]
+  ;; 先检测负权边
+  (doseq [[node neighbors] graph
+          [neighbor w] neighbors]
+    (when (neg? w)
+      (throw (ex-info (str "Dijkstra 不支持负权边: 边 " node "->" neighbor " 权重 " w) {:from node :to neighbor :weight w}))))
+
   (let [nodes (set (concat (keys graph) (map first (mapcat identity (vals graph)))))
         dist (into {} (map #(vector % Double/POSITIVE_INFINITY) nodes))
         dist (assoc dist start 0)
@@ -68,8 +81,9 @@
         :else (recur (get prev v) (conj path v))))))
 
 
-(defn eccentricity [graph node]
+(defn eccentricity
   "节点node的离心率：从node出发能到达的最远距离"
+  [graph node]
   (let [[dist _] (dijkstra graph node)
         other-dists (remove #(= 0 %) (vals dist))
         reachable-dists (filter #(not= Double/POSITIVE_INFINITY %) other-dists)]
