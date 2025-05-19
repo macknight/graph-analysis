@@ -2,20 +2,22 @@
   (:require [clojure.data.priority-map :refer [priority-map]]))
 
 (defn make-graph
-  "Generate a directed weighted graph with `n` nodes and approximately `s` edges.
-   Ensures connectivity: generates a spanning tree first, then adds extra edges.
-   Return format: {node [[neighbor weight] ...] ...}"
+  "Generate a directed weighted graph with n nodes and approximately s edges.
+   Ensures connectivity: first builds a spanning tree, then adds extra edges.
+   Returns: {node [[neighbor weight] ...] ...}"
   [n s]
   {:pre [(> n 0) (>= s 0)]}
   (when (< s (dec n))
-    (throw (ex-info "Number of edges `s` is insufficient to ensure connectivity; must be at least n-1" {:n n :s s})))
+    (throw (ex-info "Edge count s too small to ensure connectivity; must be at least n-1" {:n n :s s})))
+  (when (> s (* n (dec n)))
+    (throw (ex-info "Edge count s exceeds max possible edges n*(n-1)" {:n n :s s})))
   (let [nodes (mapv #(keyword (str %)) (range 1 (inc n)))]
-    ;; First, generate a spanning tree to ensure all nodes are connected
+    ;; Build a spanning tree to ensure all nodes are connected
     (loop [edges #{}
            connected [(first nodes)]
            remaining (vec (rest nodes))]
       (if (empty? remaining)
-        ;; After tree generation, add extra edges
+        ;; After tree is built, add extra edges
         (let [all-edges (for [a nodes, b nodes :when (not= a b)] [a b])
               existing-edges edges
               possible-edges (remove existing-edges all-edges)
@@ -26,25 +28,23 @@
               edge-map (reduce (fn [m [[from to] w]]
                                  (update m from #(conj (or % []) [to w])))
                                {} (map vector final-edges weights))]
-          ;; Ensure every node has an entry, even if it has no outgoing edges
+          ;; Ensure all nodes exist in the map
           (reduce (fn [m node] (update m node #(or % []))) edge-map nodes))
-        ;; Continue to expand the spanning tree
+        ;; Continue expanding the spanning tree
         (let [from (rand-nth connected)
               to (first remaining)
               new-edges (conj edges [from to])]
           (recur new-edges (conj connected to) (subvec remaining 1)))))))
 
 (defn dijkstra
-  "Dijkstra's algorithm: computes the shortest distance from `start` to all other nodes.
-   Time complexity: O(|E| + |V|log|V|)
-   Space complexity: O(|V|)
-   Note: does not support negative weights; throws exception if found"
+  "Dijkstra's algorithm: calculates shortest distances from start to all nodes.
+   Time: O(|E| + |V|log|V|), Space: O(|V|)
+   Note: does not support negative weights; throws exception if found."
   [graph start]
-  ;; Check for negative weights
   (when (some (fn [[_ neighbors]]
                 (some (fn [[_ w]] (< w 0)) neighbors))
               graph)
-    (throw (ex-info "Dijkstra's algorithm does not support negative weights" {})))
+    (throw (ex-info "Dijkstra does not support negative weights" {})))
   (let [nodes (set (concat (keys graph) (map first (mapcat identity (vals graph)))))
         dist (into {} (map #(vector % Double/POSITIVE_INFINITY) nodes))
         dist (assoc dist start 0)
@@ -60,7 +60,7 @@
           (let [[dist' prev' queue']
                 (reduce (fn [[d p q] [n w]]
                           (let [alt (+ (d node) w)]
-                            (if (< alt (d n))
+                            (if (or (Double/isInfinite (d n)) (< alt (d n)))
                               [(assoc d n alt) (assoc p n node) (assoc q n alt)]
                               [d p q])))
                         [dist prev queue]
@@ -68,23 +68,24 @@
             (recur dist' prev' queue')))))))
 
 (defn shortest-path
-  "Returns the shortest path from `start` to `end` as a sequence of nodes (inclusive).
+  "Returns the shortest path from start to end as a node list (inclusive).
    Example: (shortest-path g :1 :3) => [:1 :2 :3]
-   Notes:
-   - Returns a single-element list when start == end
+   - Returns [start] if start == end
    - Returns nil if no path exists
-   - The path is ordered from start to end"
+   - Path is ordered from start to end"
   [graph start end]
   (let [[dist prev] (dijkstra graph start)]
-    (loop [v end, path []]
-      (cond
-        (nil? v) nil
-        (= v start) (reverse (conj path v))
-        :else (recur (get prev v) (conj path v))))))
+    (if (= Double/POSITIVE_INFINITY (get dist end))
+      nil
+      (loop [v end, path []]
+        (cond
+          (nil? v) nil
+          (= v start) (reverse (conj path v))
+          :else (recur (get prev v) (conj path v)))))))
 
 (defn eccentricity
-  "Eccentricity of a node: the longest shortest path from the node to any reachable node.
-   For isolated or sink nodes, returns 0"
+  "Eccentricity of a node: the maximum shortest distance reachable from node.
+   Returns 0 for isolated nodes or unreachable paths."
   [graph node]
   (let [[dist _] (dijkstra graph node)
         other-dists (remove #(= 0 %) (vals dist))
@@ -94,7 +95,7 @@
       0)))
 
 (defn radius
-  "Graph radius: the smallest eccentricity among all nodes (ignoring unreachable or isolated nodes with 0)"
+  "Graph radius: the minimum eccentricity among all nodes (ignores 0/infinity)."
   [graph]
   (let [eccs (map #(eccentricity graph %) (keys graph))
         valid-eccs (filter #(and (> % 0) (not= % Double/POSITIVE_INFINITY)) eccs)]
@@ -103,7 +104,7 @@
       0)))
 
 (defn diameter
-  "Graph diameter: the largest eccentricity among all nodes (ignoring unreachable or isolated nodes with 0)"
+  "Graph diameter: the maximum eccentricity among all nodes (ignores 0/infinity)."
   [graph]
   (let [eccs (map #(eccentricity graph %) (keys graph))
         valid-eccs (filter #(and (> % 0) (not= % Double/POSITIVE_INFINITY)) eccs)]
