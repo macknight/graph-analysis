@@ -13,9 +13,9 @@
            :3 [[:4 1]]
            :4 []}]
     (is (= [:1 :2 :4] (shortest-path g :1 :4)))
-    ;; 起点=终点情况
+    ;; Case when start == end
     (is (= [:1] (shortest-path g :1 :1)))
-    ;; 不可达节点路径应返回 nil
+    ;; Return nil for unreachable paths
     (is (nil? (shortest-path g :4 :1)))))
 
 (deftest test-eccentricity
@@ -23,8 +23,8 @@
            :2 [[:4 2]]
            :3 [[:4 1]]
            :4 []}]
-    (is (= 4 (eccentricity g :1))) ;; 从 :1 到最远节点 :4 距离4
-    (is (= 0 (eccentricity g :4))) ;; :4 无出边且不可达其他节点，ecc=0
+    (is (= 4 (eccentricity g :1))) ;; Max dist from :1 to :4 is 4
+    (is (= 0 (eccentricity g :4))) ;; :4 has no outgoing edges and cannot reach others, ecc = 0
     ))
 
 (deftest test-radius-and-diameter
@@ -32,15 +32,15 @@
            :2 [[:3 2]]
            :3 [[:4 3]]
            :4 []}]
-    (is (= 5 (eccentricity g :2))) ;; 2->3->4 距离5
-    (is (= 6 (diameter g)))         ;; 最大eccentricity
-    (is (= 3 (radius g)))))         ;; 最小eccentricity，即 :3 的离心率
+    (is (= 5 (eccentricity g :2))) ;; 2 -> 3 -> 4 distance = 5
+    (is (= 6 (diameter g)))        ;; maximum eccentricity
+    (is (= 3 (radius g)))))        ;; minimum eccentricity, i.e. of node :3
 
 (deftest test-isolated-node
   (let [g {:1 []
            :2 []
            :3 []}]
-    ;; 所有节点都孤立，离心率应该是0
+    ;; All nodes are isolated; eccentricity should be 0
     (is (= 0 (eccentricity g :1)))
     (is (= 0 (eccentricity g :2)))
     (is (= 0 (eccentricity g :3)))
@@ -51,9 +51,7 @@
 (deftest test-single-node
   (let [g (make-graph 1 0)]
     (is (= {:1 []} g))
-    (is (= 0 (eccentricity g :1))))
-
-  )
+    (is (= 0 (eccentricity g :1)))))
 
 (deftest test-dijkstra-negative-weight
   (let [g {:1 [[:2 -1]] :2 []}]
